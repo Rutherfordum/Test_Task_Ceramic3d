@@ -5,7 +5,7 @@
 ![App Screenshot](https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/main/Resources/1.png)
 
 ## Описание проекта и алгоритма
-Основной и единственный код **`MatrixOffsetFinderWithJob`**, выполняет поиск смещенния матрицы model таким образом что она полностью совподает с матрицей space.
+Основной и единственный код ```C# MatrixOffsetFinderWithJob```, выполняет поиск смещенния матрицы model таким образом что она полностью совподает с матрицей space.
 
 ### Загрузка данных json
 Данные model.json и space.json храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате float4x4.
