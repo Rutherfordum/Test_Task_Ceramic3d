@@ -5,10 +5,10 @@
 ![App Screenshot](https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/main/Resources/1.png)
 
 ## Описание проекта и алгоритма
-Основной и единственный код ```C# MatrixOffsetFinderWithJob```, выполняет поиск смещенния матрицы model таким образом что она полностью совподает с матрицей space.
+Основной и единственный код **`MatrixOffsetFinderWithJob`**, выполняет поиск смещенния матрицы model таким образом что она полностью совподает с матрицей space.
 
 ### Загрузка данных json
-Данные model.json и space.json храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате float4x4.
+Данные **`model.json`** и **`space.json`** храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате **`float4x4`**.
 
 ```C#
  private async Task<List<float4x4>> LoadMatricesFromPathAsync(string path, CancellationToken cancellationToken = default)
@@ -32,7 +32,7 @@
 ```
 
 ### Визуализация данных матриц в Unity
-За визуализацию данных отвечает метод VisualizeMatrices.
+За визуализацию данных отвечает метод **`VisualizeMatrices`**.
 
 ```C#
   private void VisualizeMatrices(List<float4x4> matrices, Transform prefab)
@@ -46,7 +46,7 @@
 ```
 
 ### Подготовка данных для Burst Compile
-Для работы JobSystems нам нужно подготовить данные для паралелизма, поэтому используем NativeArray для передачи данных ModelMatrices, SpaceMatrices, Epsilon и получение данных Offsets.
+Для работы **`JobSystems`** нам нужно подготовить данные для паралелизма, поэтому используем **`NativeArray<>`** для передачи данных **`ModelMatrices`**, **`SpaceMatrices`**, **`Epsilon`** и получение данных **`Offsets`**.
 
 ```C#
  private void FindOffsetsWithJobs()
@@ -86,7 +86,7 @@
 ```
 
 ### Поиск смещений
-Для начала определяем offset между model и space, после согласно ТЗ выполняем перменожение элементов матрицы model на offset и сравниваем элементы полученной матрицы offsetMatrix c элементами space, причем мне пришлось завести погрешность точности epsilon, т.к. точность float оставялет желать лучшего, а точности double не вижу смысла, т.к. при тесте с значением epsilon = 10^-6 результат был нулевой.
+Для начала определяем **`offset`** между **`model`** и **`space`**, после согласно ТЗ выполняем перменожение элементов матрицы **`model`** на **`offset`** и сравниваем элементы полученной матрицы **`offsetMatrix`** c элементами **`space`**, причем мне пришлось завести погрешность точности **`epsilon`**, т.к. точность float оставялет желать лучшего, а точности double не вижу смысла, т.к. при тесте с значением epsilon = 10^-6 результат был нулевой.
 
 ```C#
  [BurstCompile]
@@ -154,7 +154,7 @@
 ```
 
 ### Экспорт смещенний 
-Экспорт найденных смещенний в папку StreamingAssets под названием offsetsJob.json.
+Экспорт найденных смещенний в папку StreamingAssets под названием **`offsetsJob.json`**.
 
 ```C#
  private void ExportOffsetsToJson(List<float4x4> offsets)
