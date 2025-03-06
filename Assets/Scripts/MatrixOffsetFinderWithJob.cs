@@ -13,7 +13,7 @@ using UnityEngine;
 [Serializable]
 public class OffsetData
 {
-    public List<float4x4> offsets;
+    public List<Matrix4x4> offsets;
 }
 
 public class MatrixOffsetFinderWithJob : MonoBehaviour
@@ -23,14 +23,13 @@ public class MatrixOffsetFinderWithJob : MonoBehaviour
 
     [SerializeField] private Transform _modelPrefab;
     [SerializeField] private Transform _spacePrefab;
-    [SerializeField] private float _epsilon = 0.001f;
 
-    private List<float4x4> _modelMatricesData;
-    private List<float4x4> _spaceMatricesData;
+    private List<Matrix4x4> _modelMatricesData;
+    private List<Matrix4x4> _spaceMatricesData;
 
-    private NativeArray<float4x4> _modelMatricesNative;
-    private NativeArray<float4x4> _spaceMatricesNative;
-    private NativeArray<float4x4> _offsetNative;
+    private NativeArray<Matrix4x4> _modelMatricesNative;
+    private NativeArray<Matrix4x4> _spaceMatricesNative;
+    private NativeArray<Matrix4x4> _offsetNative;
     private JobHandle _handle;
 
     public async void Start()
@@ -44,57 +43,45 @@ public class MatrixOffsetFinderWithJob : MonoBehaviour
         FindOffsetsWithJobs();
     }
 
-    private void VisualizeMatrices(List<float4x4> matrices, Transform prefab)
+    private void VisualizeMatrices(List<Matrix4x4> matrices, Transform prefab)
     {
         matrices.ForEach(m =>
         {
-            var ob = Instantiate(prefab, m.c3.xyz, new quaternion(m));
-            ob.lossyScale.Set(math.length(m.c0.xyz), math.length(m.c1.xyz), math.length(m.c2.xyz));
+            var ob = Instantiate(prefab, m.GetPosition(), new quaternion(m));
+            ob.lossyScale.Set(m.lossyScale.x, m.lossyScale.y, m.lossyScale.z);
         });
     }
 
-    private async Task<List<float4x4>> LoadMatricesFromPathAsync(string path, CancellationToken cancellationToken = default)
+    private async Task<List<Matrix4x4>> LoadMatricesFromPathAsync(string path, CancellationToken cancellationToken = default)
     {
         List<float4x4> matrixFloatList = new List<float4x4>();
 
         string data = await File.ReadAllTextAsync(path, cancellationToken);
-        var matrix = JsonConvert.DeserializeObject<List<Matrix4x4>>(data);
+        var matrixList = JsonConvert.DeserializeObject<List<Matrix4x4>>(data);
 
-        matrix.ForEach(m =>
-        {
-            matrixFloatList.Add(new float4x4(
-                m.GetColumn(0),
-                m.GetColumn(1),
-                m.GetColumn(2),
-                m.GetColumn(3)));
-        });
-
-        return matrixFloatList;
+        return matrixList;
     }
 
     private void FindOffsetsWithJobs()
     {
         int offsetCount = _modelMatricesData.Count * _spaceMatricesData.Count;
-        _modelMatricesNative = new NativeArray<float4x4>(_modelMatricesData.ToArray(), Allocator.TempJob);
-        _spaceMatricesNative = new NativeArray<float4x4>(_spaceMatricesData.ToArray(), Allocator.TempJob);
-        _offsetNative = new NativeArray<float4x4>(offsetCount, Allocator.TempJob);
+        _modelMatricesNative = new NativeArray<Matrix4x4>(_modelMatricesData.ToArray(), Allocator.TempJob);
+        _spaceMatricesNative = new NativeArray<Matrix4x4>(_spaceMatricesData.ToArray(), Allocator.TempJob);
+        _offsetNative = new NativeArray<Matrix4x4>(_spaceMatricesData.ToArray().Length, Allocator.TempJob);
 
-        var job = new MatrixComparisonJob
-        {
-            ModelMatrices = _modelMatricesNative,
-            SpaceMatrices = _spaceMatricesNative,
-            Offsets = _offsetNative,
-            Epsilon = _epsilon
-        };
+        var job = new FindOffsetMatricesJob(
+            _modelMatricesNative,
+            _spaceMatricesNative,
+            _offsetNative);
 
-        _handle = job.Schedule(_offsetNative.Length, 128);
+        _handle = job.Schedule(_offsetNative.Length, 64);
         _handle.Complete();
 
-        List<float4x4> offsets = new List<float4x4>();
+        List<Matrix4x4> offsets = new List<Matrix4x4>();
 
         foreach (var offset in _offsetNative)
         {
-            if (!offset.Equals(float4x4.zero))
+            if (!offset.Equals(Matrix4x4.zero))
             {
                 offsets.Add(offset);
             }
@@ -108,61 +95,67 @@ public class MatrixOffsetFinderWithJob : MonoBehaviour
     }
 
     [BurstCompile]
-    public struct MatrixComparisonJob : IJobParallelFor
+    public struct FindOffsetMatricesJob : IJobParallelFor
     {
-        [ReadOnly] public NativeArray<float4x4> ModelMatrices;
-        [ReadOnly] public NativeArray<float4x4> SpaceMatrices;
-        [WriteOnly] public NativeArray<float4x4> Offsets;
-        [ReadOnly] public float Epsilon;
+        private NativeArray<Matrix4x4> _modelMatrices;
+        private NativeArray<Matrix4x4> _spaceMatrices;
+        private NativeArray<Matrix4x4> _offsets;
+        private Matrix4x4 _modelMatrix;
 
+        public FindOffsetMatricesJob(
+            NativeArray<Matrix4x4> modelMatrices,
+            NativeArray<Matrix4x4> spaceMatrices,
+            NativeArray<Matrix4x4> offsets)
+        {
+            _modelMatrices = modelMatrices;
+            _spaceMatrices = spaceMatrices;
+            _offsets = offsets;
+            _modelMatrix = modelMatrices[0];
+        }
         public void Execute(int index)
         {
-            int modelIndex = index / SpaceMatrices.Length;
-            int spaceIndex = index % SpaceMatrices.Length;
+            Matrix4x4 offset = _spaceMatrices[index] * _modelMatrix.inverse;
 
-            float4x4 modelMatrix = ModelMatrices[modelIndex];
-            float4x4 spaceMatrix = SpaceMatrices[spaceIndex];
-
-            float4x4 offset = CalculateOffset(modelMatrix, spaceMatrix, Epsilon);
-
-            if (!offset.Equals(float4x4.zero))
+            if (MatricesAreEqual(_modelMatrices, _spaceMatrices, offset))
             {
-                Offsets[index] = offset;
+                _offsets[index] = offset;
             }
         }
 
-        private float4x4 CalculateOffset(float4x4 model, float4x4 space, float epsilon)
+        private bool CheckMatrix4x4LessEpsilon(Matrix4x4 matrix, Matrix4x4 comparableMatrix, float floatError = 0.001f)
         {
-            float4x4 offset = space - model;
-            float4x4 offsetMatrix = model * float4x4.Translate(offset.c3.xyz);
-
-            if (MatricesAreEqual(offsetMatrix, space, epsilon))
+            for (int i = 0; i < 16; i++)
             {
-                return offset;
+                if (Mathf.Abs(matrix[i] - comparableMatrix[i]) > floatError)
+                {
+                    return false;
+                }
             }
 
-            return float4x4.zero;
+            return true;
         }
 
-        private bool MatricesAreEqual(float4x4 a, float4x4 b, float epsilon)
+        private bool MatricesAreEqual(
+            NativeArray<Matrix4x4> modelMatrices,
+            NativeArray<Matrix4x4> spaceMatrices,
+            Matrix4x4 offset)
         {
-            float4x4 c = a - b;
+            bool matchFound = false;
+            Matrix4x4 transformedMatrix;
 
-            if (CheckFloat4LessEpsilon(c.c0, epsilon) &&
-                CheckFloat4LessEpsilon(c.c1, epsilon) &&
-                CheckFloat4LessEpsilon(c.c2, epsilon) &&
-                CheckFloat4LessEpsilon(c.c3, epsilon))
-                return true;
-
-            return false;
-        }
-
-        private bool CheckFloat4LessEpsilon(float4 value, float epsilon)
-        {
-            for (int i = 0; i < 4; i++)
+            foreach (var modelMatrix in modelMatrices)
             {
-                var val = Mathf.Abs(value[i]);
-                if (val > epsilon)
+                transformedMatrix = math.mul(offset, modelMatrix);
+
+                foreach (var spaceMatrix in spaceMatrices)
+                {
+                    matchFound = CheckMatrix4x4LessEpsilon(spaceMatrix, transformedMatrix);
+
+                    if (matchFound)
+                        break;
+                }
+
+                if (!matchFound)
                     return false;
             }
 
@@ -170,7 +163,7 @@ public class MatrixOffsetFinderWithJob : MonoBehaviour
         }
     }
 
-    private void ExportOffsetsToJson(List<float4x4> offsets)
+    private void ExportOffsetsToJson(List<Matrix4x4> offsets)
     {
         OffsetData data = new OffsetData();
         data.offsets = offsets;
@@ -178,4 +171,6 @@ public class MatrixOffsetFinderWithJob : MonoBehaviour
         File.WriteAllText(Application.streamingAssetsPath + "/offsetsJob.json", json);
         Debug.Log(Application.streamingAssetsPath + "/offsetsJob.json");
     }
+
+
 }

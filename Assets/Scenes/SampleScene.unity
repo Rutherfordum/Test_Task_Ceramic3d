@@ -168,7 +168,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _modelPrefab: {fileID: 5448810843495812491, guid: f7b9967e689d594459a850062fdbe19e, type: 3}
   _spacePrefab: {fileID: 5448810843495812491, guid: 2e89f79b439da2a49bfe8aa4d295c5fa, type: 3}
-  _epsilon: 5
+  _epsilon: 0.001
 --- !u!1 &705507993
 GameObject:
   m_ObjectHideFlags: 0
