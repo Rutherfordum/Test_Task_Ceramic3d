@@ -10,7 +10,7 @@
 ### Загрузка данных json
 Данные **`model.json`** и **`space.json`** храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате **`Matrix4x4`**.
 
-[```C#
+```C#
   private async Task<List<Matrix4x4>> LoadMatricesFromPathAsync(string path, CancellationToken cancellationToken = default)
     {
         List<float4x4> matrixFloatList = new List<float4x4>();
@@ -20,12 +20,12 @@
 
         return matrixList;
     }
-```](https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs?plain=1#L55C4-L63C6)
+```
 
 ### Визуализация данных матриц в Unity
 За визуализацию данных отвечает метод **`VisualizeMatrices`**.
 
-[```C#
+```C#
   private void VisualizeMatrices(List<Matrix4x4> matrices, Transform prefab)
     {
         matrices.ForEach(m =>
@@ -34,35 +34,32 @@
             ob.lossyScale.Set(m.lossyScale.x, m.lossyScale.y, m.lossyScale.z);
         });
     }
-```](https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs?plain=1#L46-L53)
+```
 
 ### Подготовка данных для Burst Compile
-Для работы **`JobSystems`** нам нужно подготовить данные для паралелизма, поэтому используем **`NativeArray<>`** для передачи данных **`ModelMatrices`**, **`SpaceMatrices`**, **`Epsilon`** и получение данных **`Offsets`**.
+Для работы **`JobSystems`** нам нужно подготовить данные для паралелизма, поэтому используем **`NativeArray<>`** для передачи данных **`ModelMatrices`**, **`SpaceMatrices`** и получение данных **`Offsets`**.
 
 ```C#
  private void FindOffsetsWithJobs()
     {
         int offsetCount = _modelMatricesData.Count * _spaceMatricesData.Count;
-        _modelMatricesNative = new NativeArray<float4x4>(_modelMatricesData.ToArray(), Allocator.TempJob);
-        _spaceMatricesNative = new NativeArray<float4x4>(_spaceMatricesData.ToArray(), Allocator.TempJob);
-        _offsetNative = new NativeArray<float4x4>(offsetCount, Allocator.TempJob);
+        _modelMatricesNative = new NativeArray<Matrix4x4>(_modelMatricesData.ToArray(), Allocator.TempJob);
+        _spaceMatricesNative = new NativeArray<Matrix4x4>(_spaceMatricesData.ToArray(), Allocator.TempJob);
+        _offsetNative = new NativeArray<Matrix4x4>(_spaceMatricesData.ToArray().Length, Allocator.TempJob);
 
-        var job = new MatrixComparisonJob
-        {
-            ModelMatrices = _modelMatricesNative,
-            SpaceMatrices = _spaceMatricesNative,
-            Offsets = _offsetNative,
-            Epsilon = _epsilon
-        };
+        var job = new FindOffsetMatricesJob(
+            _modelMatricesNative,
+            _spaceMatricesNative,
+            _offsetNative);
 
-        _handle = job.Schedule(_offsetNative.Length, 128);
+        _handle = job.Schedule(_offsetNative.Length, 64);
         _handle.Complete();
 
-        List<float4x4> offsets = new List<float4x4>();
+        List<Matrix4x4> offsets = new List<Matrix4x4>();
 
         foreach (var offset in _offsetNative)
         {
-            if (!offset.Equals(float4x4.zero))
+            if (!offset.Equals(Matrix4x4.zero))
             {
                 offsets.Add(offset);
             }
@@ -77,65 +74,71 @@
 ```
 
 ### Поиск смещений
-Для начала определяем **`offset`** между **`model`** и **`space`**, после согласно ТЗ выполняем перменожение элементов матрицы **`model`** на **`offset`** и сравниваем элементы полученной матрицы **`offsetMatrix`** c элементами **`space`**, причем мне пришлось завести погрешность точности **`epsilon`**, т.к. точность float оставялет желать лучшего, а точности double не вижу смысла, т.к. при тесте с значением epsilon = 10^-6 результат был нулевой.
+Для начала определяем **`offset`** между **`model`** и **`space`**, после согласно ТЗ выполняем перменожение элементов матрицы **`model`** на **`offset`** и сравниваем элементы полученной матрицы **`transformedMatrix`** c элементами **`space`**, причем мне пришлось завести погрешность точности **`0,001f`**.
 
 ```C#
  [BurstCompile]
-    public struct MatrixComparisonJob : IJobParallelFor
+    public struct FindOffsetMatricesJob : IJobParallelFor
     {
-        [ReadOnly] public NativeArray<float4x4> ModelMatrices;
-        [ReadOnly] public NativeArray<float4x4> SpaceMatrices;
-        [WriteOnly] public NativeArray<float4x4> Offsets;
-        [ReadOnly] public float Epsilon;
+        private NativeArray<Matrix4x4> _modelMatrices;
+        private NativeArray<Matrix4x4> _spaceMatrices;
+        private NativeArray<Matrix4x4> _offsets;
+        private Matrix4x4 _modelMatrix;
 
+        public FindOffsetMatricesJob(
+            NativeArray<Matrix4x4> modelMatrices,
+            NativeArray<Matrix4x4> spaceMatrices,
+            NativeArray<Matrix4x4> offsets)
+        {
+            _modelMatrices = modelMatrices;
+            _spaceMatrices = spaceMatrices;
+            _offsets = offsets;
+            _modelMatrix = modelMatrices[0];
+        }
         public void Execute(int index)
         {
-            int modelIndex = index / SpaceMatrices.Length;
-            int spaceIndex = index % SpaceMatrices.Length;
+            Matrix4x4 offset = _spaceMatrices[index] * _modelMatrix.inverse;
 
-            float4x4 modelMatrix = ModelMatrices[modelIndex];
-            float4x4 spaceMatrix = SpaceMatrices[spaceIndex];
-
-            float4x4 offset = CalculateOffset(modelMatrix, spaceMatrix, Epsilon);
-
-            if (!offset.Equals(float4x4.zero))
+            if (MatricesAreEqual(_modelMatrices, _spaceMatrices, offset))
             {
-                Offsets[index] = offset;
+                _offsets[index] = offset;
             }
         }
 
-        private float4x4 CalculateOffset(float4x4 model, float4x4 space, float epsilon)
+        private bool CheckMatrix4x4LessEpsilon(Matrix4x4 matrix, Matrix4x4 comparableMatrix, float floatError = 0.001f)
         {
-            float4x4 offset = space - model;
-            float4x4 offsetMatrix = model * float4x4.Translate(offset.c3.xyz);
-
-            if (MatricesAreEqual(offsetMatrix, space, epsilon))
+            for (int i = 0; i < 16; i++)
             {
-                return offset;
+                if (Mathf.Abs(matrix[i] - comparableMatrix[i]) > floatError)
+                {
+                    return false;
+                }
             }
 
-            return float4x4.zero;
+            return true;
         }
 
-        private bool MatricesAreEqual(float4x4 a, float4x4 b, float epsilon)
+        private bool MatricesAreEqual(
+            NativeArray<Matrix4x4> modelMatrices,
+            NativeArray<Matrix4x4> spaceMatrices,
+            Matrix4x4 offset)
         {
-            float4x4 c = a - b;
+            bool matchFound = false;
+            Matrix4x4 transformedMatrix;
 
-            if (CheckFloat4LessEpsilon(c.c0, epsilon) &&
-                CheckFloat4LessEpsilon(c.c1, epsilon) &&
-                CheckFloat4LessEpsilon(c.c2, epsilon) &&
-                CheckFloat4LessEpsilon(c.c3, epsilon))
-                return true;
-
-            return false;
-        }
-
-        private bool CheckFloat4LessEpsilon(float4 value, float epsilon)
-        {
-            for (int i = 0; i < 4; i++)
+            foreach (var modelMatrix in modelMatrices)
             {
-                var val = Mathf.Abs(value[i]);
-                if (val > epsilon)
+                transformedMatrix = math.mul(offset, modelMatrix);
+
+                foreach (var spaceMatrix in spaceMatrices)
+                {
+                    matchFound = CheckMatrix4x4LessEpsilon(spaceMatrix, transformedMatrix);
+
+                    if (matchFound)
+                        break;
+                }
+
+                if (!matchFound)
                     return false;
             }
 
@@ -148,7 +151,7 @@
 Экспорт найденных смещенний в папку StreamingAssets под названием **`offsetsJob.json`**.
 
 ```C#
- private void ExportOffsetsToJson(List<float4x4> offsets)
+ private void ExportOffsetsToJson(List<Matrix4x4> offsets)
     {
         OffsetData data = new OffsetData();
         data.offsets = offsets;
