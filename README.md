@@ -8,9 +8,9 @@
 Основной и единственный код **`MatrixOffsetFinderWithJob`**, выполняет поиск смещенния матрицы model таким образом что она полностью совподает с матрицей space.
 
 ### Загрузка данных json
-Данные **`model.json`** и **`space.json`** храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате **`float4x4`**.
+Данные **`model.json`** и **`space.json`** храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате **`Matrix4x4`**.
 
-https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs#L55C4-L63C6
+https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs?plain=1#L55C4-L63C6
 
 ### Визуализация данных матриц в Unity
 За визуализацию данных отвечает метод **`VisualizeMatrices`**.
