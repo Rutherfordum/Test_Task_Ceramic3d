@@ -10,21 +10,31 @@
 ### Загрузка данных json
 Данные **`model.json`** и **`space.json`** храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате **`Matrix4x4`**.
 
-https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs?plain=1#L55C4-L63C6
+[```C#
+  private async Task<List<Matrix4x4>> LoadMatricesFromPathAsync(string path, CancellationToken cancellationToken = default)
+    {
+        List<float4x4> matrixFloatList = new List<float4x4>();
+
+        string data = await File.ReadAllTextAsync(path, cancellationToken);
+        var matrixList = JsonConvert.DeserializeObject<List<Matrix4x4>>(data);
+
+        return matrixList;
+    }
+```](https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs?plain=1#L55C4-L63C6)
 
 ### Визуализация данных матриц в Unity
 За визуализацию данных отвечает метод **`VisualizeMatrices`**.
 
-```C#
-  private void VisualizeMatrices(List<float4x4> matrices, Transform prefab)
+[```C#
+  private void VisualizeMatrices(List<Matrix4x4> matrices, Transform prefab)
     {
         matrices.ForEach(m =>
         {
-            var ob = Instantiate(prefab, m.c3.xyz, new quaternion(m));
-            ob.lossyScale.Set(math.length(m.c0.xyz), math.length(m.c1.xyz), math.length(m.c2.xyz));
+            var ob = Instantiate(prefab, m.GetPosition(), new quaternion(m));
+            ob.lossyScale.Set(m.lossyScale.x, m.lossyScale.y, m.lossyScale.z);
         });
     }
-```
+```](https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs?plain=1#L46-L53)
 
 ### Подготовка данных для Burst Compile
 Для работы **`JobSystems`** нам нужно подготовить данные для паралелизма, поэтому используем **`NativeArray<>`** для передачи данных **`ModelMatrices`**, **`SpaceMatrices`**, **`Epsilon`** и получение данных **`Offsets`**.
