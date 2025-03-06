@@ -10,26 +10,7 @@
 ### Загрузка данных json
 Данные **`model.json`** и **`space.json`** храняться в папке StreamingAssets. Для чтения данных используется метод LoadMatricesFromPathAsync, как видим он выполнятеся асинхронно и возвращает список матриц в формате **`float4x4`**.
 
-```C#
- private async Task<List<float4x4>> LoadMatricesFromPathAsync(string path, CancellationToken cancellationToken = default)
-    {
-        List<float4x4> matrixFloatList = new List<float4x4>();
-
-        string data = await File.ReadAllTextAsync(path, cancellationToken);
-        var matrix = JsonConvert.DeserializeObject<List<Matrix4x4>>(data);
-
-        matrix.ForEach(m =>
-        {
-            matrixFloatList.Add(new float4x4(
-                m.GetColumn(0),
-                m.GetColumn(1),
-                m.GetColumn(2),
-                m.GetColumn(3)));
-        });
-
-        return matrixFloatList;
-    }
-```
+https://github.com/Rutherfordum/Test_Task_Ceramic3d/blob/87773a3ef63353c57f12d4a43a219e3ee22a426f/Assets/Scripts/MatrixOffsetFinderWithJob.cs#L55C4-L63C6
 
 ### Визуализация данных матриц в Unity
 За визуализацию данных отвечает метод **`VisualizeMatrices`**.
